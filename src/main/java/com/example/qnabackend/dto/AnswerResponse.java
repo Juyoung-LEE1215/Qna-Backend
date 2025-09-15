@@ -2,10 +2,8 @@ package com.example.qnabackend.dto;
 
 import com.example.qnabackend.entity.Answer;
 import com.example.qnabackend.entity.AnswerStatus;
-
 import java.time.LocalDateTime;
 
-/** 답변 응답 DTO */
 public record AnswerResponse(
         Long id,
         Long questionId,
@@ -19,17 +17,19 @@ public record AnswerResponse(
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {
-    public static AnswerResponse of(Answer a, boolean canSeeContent) {
-        String body = a.isPrivate() && !canSeeContent
-                ? "(비공개 답변입니다)"
-                : (a.getStatus() == AnswerStatus.BLINDED && !canSeeContent)
-                ? "(블라인드 처리된 답변입니다)"
-                : a.getContent();
+    // 목록/상세 기본 정책(그대로 노출)
+    public static AnswerResponse of(Answer a) {
+        return of(a, true);
+    }
+
+    // 필요 시 본문 노출 제어용
+    public static AnswerResponse of(Answer a, boolean showBody) {
+        if (a == null) return null;
         return new AnswerResponse(
                 a.getId(),
                 a.getQuestionId(),
                 a.getUserId(),
-                body,
+                showBody ? a.getContent() : null,
                 a.isPrivate(),
                 a.getStatus(),
                 a.getUpvoteCount(),

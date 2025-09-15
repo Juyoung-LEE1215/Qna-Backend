@@ -5,7 +5,6 @@ import com.example.qnabackend.entity.QuestionStatus;
 
 import java.time.LocalDateTime;
 
-/** 질문 응답 DTO */
 public record QuestionResponse(
         Long id,
         Long userId,

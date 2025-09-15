@@ -6,16 +6,11 @@ import com.example.qnabackend.dto.QuestionUpdateRequest;
 import com.example.qnabackend.service.QuestionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.*;
+import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-/**
- * Q&A 질문 컨트롤러
- * - 생성/목록/단건/수정/삭제(soft delete)
- */
 @RestController
 @RequestMapping("/api/qna/questions")
 @RequiredArgsConstructor
@@ -23,45 +18,69 @@ public class QuestionController {
 
     private final QuestionService questionService;
 
-    /** 질문 생성 */
     @PostMapping
     public ResponseEntity<Long> create(@AuthenticationPrincipal Long userId,
                                        @Valid @RequestBody QuestionCreateRequest req) {
+        if (userId == null) userId = 1L; // dev 편의
         Long id = questionService.create(userId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(id);
     }
 
-    /** 질문 목록 (카테고리/페이징/정렬) */
     @GetMapping
     public ResponseEntity<Page<QuestionResponse>> list(
             @RequestParam(required = false) String category,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String sort // 기본 정렬은 서비스에서 처리
+            @RequestParam(required = false) String sort // e.g. createdAt,desc
     ) {
-        return ResponseEntity.ok(questionService.list(category, page, size, sort));
+        Pageable pageable = PageRequest.of(page, size, toSafeSort(sort));
+        return ResponseEntity.ok(questionService.list(category, pageable));
     }
 
-    /** 질문 단건 조회 */
     @GetMapping("/{id}")
     public ResponseEntity<QuestionResponse> get(@PathVariable Long id) {
         return ResponseEntity.ok(questionService.get(id));
     }
 
-    /** 질문 수정 (작성자만) */
     @PutMapping("/{id}")
     public ResponseEntity<Void> update(@AuthenticationPrincipal Long userId,
                                        @PathVariable Long id,
                                        @Valid @RequestBody QuestionUpdateRequest req) {
+        if (userId == null) userId = 1L; // dev 편의
         questionService.update(userId, id, req);
         return ResponseEntity.noContent().build();
     }
 
-    /** 질문 삭제 (soft delete) */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@AuthenticationPrincipal Long userId,
                                        @PathVariable Long id) {
+        if (userId == null) userId = 1L; // dev 편의
         questionService.delete(userId, id);
         return ResponseEntity.noContent().build();
+    }
+
+    // ---- 정렬 화이트리스트(엔티티 프로퍼티명만 허용) ----
+    private Sort toSafeSort(String raw) {
+        String prop = "id";
+        Sort.Direction dir = Sort.Direction.DESC;
+
+        if (raw != null && !raw.isBlank()) {
+            String[] parts = raw.split(",", 2);
+            String candidate = parts[0].trim();
+            switch (candidate) {
+                case "id":
+                case "createdAt":
+                case "updatedAt":
+                case "title":
+                    prop = candidate;
+                    break;
+                default:
+                    prop = "id";
+            }
+            if (parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim())) {
+                dir = Sort.Direction.ASC;
+            }
+        }
+        return Sort.by(dir, prop);
     }
 }
