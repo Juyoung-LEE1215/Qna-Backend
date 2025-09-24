@@ -4,28 +4,27 @@ import com.example.qnabackend.dto.*;
 import com.example.qnabackend.entity.*;
 import com.example.qnabackend.repository.*;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Service                           // ✅ 빈 등록 필수
-@RequiredArgsConstructor           // final 필드 생성자 주입
+import java.time.LocalDateTime;
+
+@Service
+@RequiredArgsConstructor
+@Transactional
 public class AnswerService {
 
+    private static final int REPORT_BLIND_THRESHOLD = 5;
+
     private final AnswerRepository answerRepository;
+    private final AnswerVoteRepository answerVoteRepository;
+    private final AnswerReportRepository answerReportRepository;
     private final QuestionRepository questionRepository;
-    private final AnswerVoteRepository voteRepository;
-    private final AnswerReportRepository reportRepository;
 
-    @Value("${qna.answer.report.threshold:5}")
-    private int reportThreshold;
-
-    @Transactional
     public Long create(Long userId, AnswerCreateRequest req) {
-        var q = questionRepository.findById(req.questionId())
+        questionRepository.findById(req.questionId())
                 .orElseThrow(() -> new IllegalArgumentException("question not found"));
-        if (q.getStatus() != QuestionStatus.OPEN) throw new IllegalStateException("question not open");
 
         Answer a = Answer.builder()
                 .questionId(req.questionId())
@@ -33,90 +32,120 @@ public class AnswerService {
                 .content(req.content())
                 .isPrivate(req.isPrivate())
                 .status(AnswerStatus.VISIBLE)
+                .upvoteCount(0)
+                .downvoteCount(0)
+                .reportCount(0)
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
                 .build();
         return answerRepository.save(a).getId();
     }
 
     @Transactional(readOnly = true)
-    public Page<AnswerResponse> list(Long questionId, Long currentUserId, boolean isAdmin,
-                                     int page, int size, String sort) {
-        Pageable pageable = PageRequest.of(page, size,
-                Sort.by(Sort.Direction.DESC, (sort == null || sort.isBlank()) ? "id" : sort));
-        Page<Answer> result = answerRepository.findByQuestionIdAndStatus(questionId, AnswerStatus.VISIBLE, pageable);
-        return result.map(a -> AnswerResponse.of(a, canSeeBody(a, questionId, currentUserId, isAdmin)));
+    public Page<AnswerResponse> list(Long questionId, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Page<Answer> result = answerRepository.findByQuestionId(questionId, pageable);
+        return result.map(AnswerResponse::of); // of(Answer) 오버로드 필요
     }
 
-    private boolean canSeeBody(Answer a, Long questionId, Long currentUserId, boolean isAdmin) {
-        if (isAdmin) return true;
-        if (a.getStatus() == AnswerStatus.BLINDED) {
-            return a.getUserId().equals(currentUserId);
-        }
-        if (!a.isPrivate()) return true;
-        var q = questionRepository.findById(questionId).orElse(null);
-        return q != null && (q.getUserId().equals(currentUserId) || a.getUserId().equals(currentUserId));
-    }
-
-    @Transactional
     public void update(Long userId, Long answerId, AnswerUpdateRequest req) {
         Answer a = answerRepository.findById(answerId)
                 .orElseThrow(() -> new IllegalArgumentException("answer not found"));
-        if (!a.getUserId().equals(userId)) throw new SecurityException("not owner");
-        if (a.getStatus() == AnswerStatus.DELETED) throw new IllegalStateException("deleted");
+        validateAuthor(userId, a);
         a.setContent(req.content());
-        a.setPrivate(req.isPrivate());
+        a.setPrivate(req.isPrivate()); // primitive boolean
+        a.setUpdatedAt(LocalDateTime.now());
     }
 
-    @Transactional
     public void delete(Long userId, Long answerId) {
         Answer a = answerRepository.findById(answerId)
                 .orElseThrow(() -> new IllegalArgumentException("answer not found"));
-        if (!a.getUserId().equals(userId)) throw new SecurityException("not owner");
+        validateAuthor(userId, a);
         a.setStatus(AnswerStatus.DELETED);
+        a.setUpdatedAt(LocalDateTime.now());
     }
 
-    @Transactional
-    public void vote(Long userId, Long answerId, VoteType type) {
+    public void vote(Long userId, Long answerId, String typeRaw) {
+        VoteType type = toVoteType(typeRaw);
+
         Answer a = answerRepository.findById(answerId)
                 .orElseThrow(() -> new IllegalArgumentException("answer not found"));
-        if (a.getUserId().equals(userId)) throw new IllegalStateException("self vote not allowed");
-        if (a.getStatus() != AnswerStatus.VISIBLE) throw new IllegalStateException("not votable");
 
-        var existing = voteRepository.findByAnswerIdAndUserId(answerId, userId);
-        if (existing.isEmpty()) {
-            voteRepository.save(AnswerVote.builder().answerId(answerId).userId(userId).type(type).build());
+        AnswerVote existing = answerVoteRepository.findByAnswerIdAndUserId(answerId, userId).orElse(null);
+
+        if (existing == null) {
+            AnswerVote v = AnswerVote.builder()
+                    .answerId(answerId)
+                    .userId(userId)
+                    .type(type)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+            answerVoteRepository.save(v);
             applyVoteDelta(a, type, +1);
         } else {
-            var v = existing.get();
-            if (v.getType() == type) {
-                voteRepository.delete(v);                    // 토글 해제
+            if (existing.getType() == type) {
+                answerVoteRepository.delete(existing); // 같은 타입 → 해제
                 applyVoteDelta(a, type, -1);
             } else {
-                VoteType prev = v.getType();                 // 타입 변경
-                v.setType(type);
+                applyVoteDelta(a, existing.getType(), -1);
+                existing.setType(type);
                 applyVoteDelta(a, type, +1);
-                applyVoteDelta(a, prev, -1);
             }
         }
+
+        normalizeCounts(a);
+        a.setUpdatedAt(LocalDateTime.now());
     }
 
-    private void applyVoteDelta(Answer a, VoteType t, int delta) {
-        if (t == VoteType.UP) a.setUpvoteCount(a.getUpvoteCount() + delta);
-        else a.setDownvoteCount(a.getDownvoteCount() + delta);
-    }
-
-    @Transactional
-    public void report(Long reporterId, Long answerId, String reason) {
+    public void report(Long userId, Long answerId, String reason) {
         Answer a = answerRepository.findById(answerId)
                 .orElseThrow(() -> new IllegalArgumentException("answer not found"));
-        if (a.getUserId().equals(reporterId)) throw new IllegalStateException("self report not allowed");
-        if (reportRepository.existsByAnswerIdAndReporterId(answerId, reporterId))
-            throw new IllegalStateException("already reported");
 
-        reportRepository.save(AnswerReport.builder()
-                .answerId(answerId).reporterId(reporterId).reason(reason).build());
+        if (answerReportRepository.existsByAnswerIdAndReporterId(answerId, userId)) {
+            return; // 중복 신고 무시
+        }
+
+        AnswerReport report = AnswerReport.builder()
+                .answerId(answerId)
+                .reporterId(userId)
+                .reason(reason)
+                .createdAt(LocalDateTime.now())
+                .build();
+        answerReportRepository.save(report);
+
         a.setReportCount(a.getReportCount() + 1);
-        if (a.getReportCount() >= reportThreshold && a.getStatus() == AnswerStatus.VISIBLE) {
+        if (a.getReportCount() >= REPORT_BLIND_THRESHOLD && a.getStatus() == AnswerStatus.VISIBLE) {
             a.setStatus(AnswerStatus.BLINDED);
         }
+        a.setUpdatedAt(LocalDateTime.now());
+    }
+
+    // helpers
+    private void validateAuthor(Long userId, Answer a) {
+        if (userId == null || !a.getUserId().equals(userId)) {
+            throw new IllegalStateException("only author can modify/delete");
+        }
+    }
+
+    private VoteType toVoteType(String raw) {
+        if (raw == null) throw new IllegalArgumentException("vote type is required");
+        try {
+            return VoteType.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("invalid vote type: " + raw);
+        }
+    }
+
+    private void applyVoteDelta(Answer a, VoteType type, int delta) {
+        switch (type) {
+            case UP -> a.setUpvoteCount(a.getUpvoteCount() + delta);
+            case DOWN -> a.setDownvoteCount(a.getDownvoteCount() + delta);
+        }
+    }
+
+    private void normalizeCounts(Answer a) {
+        if (a.getUpvoteCount() < 0) a.setUpvoteCount(0);
+        if (a.getDownvoteCount() < 0) a.setDownvoteCount(0);
+        if (a.getReportCount() < 0) a.setReportCount(0);
     }
 }
