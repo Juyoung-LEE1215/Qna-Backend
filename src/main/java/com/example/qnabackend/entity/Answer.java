@@ -9,8 +9,11 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "answers")
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Answer {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

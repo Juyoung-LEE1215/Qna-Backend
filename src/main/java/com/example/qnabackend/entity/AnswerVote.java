@@ -15,8 +15,11 @@ import java.time.LocalDateTime;
                 @Index(name = "idx_votes_answer", columnList = "answer_id")
         }
 )
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class AnswerVote {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

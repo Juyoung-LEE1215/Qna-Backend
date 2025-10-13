@@ -21,7 +21,7 @@ public class QuestionController {
     @PostMapping
     public ResponseEntity<Long> create(@AuthenticationPrincipal Long userId,
                                        @Valid @RequestBody QuestionCreateRequest req) {
-        if (userId == null) userId = 1L; // dev 편의
+        if (userId == null) userId = 1L; // dev용 임시
         Long id = questionService.create(userId, req);
         return ResponseEntity.status(HttpStatus.CREATED).body(id);
     }
@@ -31,7 +31,7 @@ public class QuestionController {
             @RequestParam(required = false) String category,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String sort // e.g. createdAt,desc
+            @RequestParam(required = false) String sort
     ) {
         Pageable pageable = PageRequest.of(page, size, toSafeSort(sort));
         return ResponseEntity.ok(questionService.list(category, pageable));
@@ -46,7 +46,7 @@ public class QuestionController {
     public ResponseEntity<Void> update(@AuthenticationPrincipal Long userId,
                                        @PathVariable Long id,
                                        @Valid @RequestBody QuestionUpdateRequest req) {
-        if (userId == null) userId = 1L; // dev 편의
+        if (userId == null) userId = 1L;
         questionService.update(userId, id, req);
         return ResponseEntity.noContent().build();
     }
@@ -54,33 +54,31 @@ public class QuestionController {
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@AuthenticationPrincipal Long userId,
                                        @PathVariable Long id) {
-        if (userId == null) userId = 1L; // dev 편의
+        if (userId == null) userId = 1L;
         questionService.delete(userId, id);
         return ResponseEntity.noContent().build();
     }
 
-    // ---- 정렬 화이트리스트(엔티티 프로퍼티명만 허용) ----
-    private Sort toSafeSort(String raw) {
+    @PostMapping("/{id}/stats")
+    public ResponseEntity<Void> updateStats(@PathVariable Long id,
+                                            @RequestParam String type) {
+        questionService.updateStats(id, type);
+        return ResponseEntity.ok().build();
+    }
+
+    // ---- 정렬 화이트리스트 ----
+    private Sort toSafeSort(String sort) {
         String prop = "id";
         Sort.Direction dir = Sort.Direction.DESC;
 
-        if (raw != null && !raw.isBlank()) {
-            String[] parts = raw.split(",", 2);
-            String candidate = parts[0].trim();
-            switch (candidate) {
-                case "id":
-                case "createdAt":
-                case "updatedAt":
-                case "title":
-                    prop = candidate;
-                    break;
-                default:
-                    prop = "id";
-            }
-            if (parts.length > 1 && "asc".equalsIgnoreCase(parts[1].trim())) {
-                dir = Sort.Direction.ASC;
+        if (sort != null && !sort.isBlank()) {
+            switch (sort.toLowerCase()) {
+                case "latest" -> prop = "createdAt";
+                case "recommended" -> prop = "likeCount";
+                case "popular" -> prop = "viewCount";
             }
         }
+
         return Sort.by(dir, prop);
     }
 }
