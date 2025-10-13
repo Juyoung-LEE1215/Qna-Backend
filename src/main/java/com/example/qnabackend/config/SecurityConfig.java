@@ -16,7 +16,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**", "/h2-console/**"))
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/api/**"))
                 .headers(h -> h.frameOptions(f -> f.sameOrigin()))
                 .cors(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth
@@ -29,7 +29,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.PUT,    "/api/qna/**").permitAll()
                         .requestMatchers(HttpMethod.DELETE, "/api/qna/**").permitAll()
                         .requestMatchers(HttpMethod.PATCH,  "/api/qna/**").permitAll()
-                        .requestMatchers("/h2-console/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .httpBasic(Customizer.withDefaults());

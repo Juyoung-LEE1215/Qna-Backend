@@ -12,11 +12,14 @@ import java.time.LocalDateTime;
         name = "questions",
         indexes = {
                 @Index(name = "idx_questions_user", columnList = "user_id"),
-                @Index(name = "idx_questions_status", columnList = "status")
+                @Index(name = "idx_questions_status", columnList = "status"),
         }
 )
-@Getter @Setter
-@NoArgsConstructor @AllArgsConstructor @Builder
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Question {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -47,4 +50,14 @@ public class Question {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+
+    // 질문 통계
+    @OneToOne(mappedBy = "question", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private QuestionStat stats;
+
+    public void assignStats(QuestionStat stats) {
+        this.stats = stats;
+        stats.setQuestion(this);
+    }
 }
