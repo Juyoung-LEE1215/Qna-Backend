@@ -30,6 +30,8 @@ public record QuestionResponse(
                 .content(q.getContent())
                 .category(q.getCategory())
                 .status(q.getStatus())
+                .createdAt(q.getCreatedAt())
+                .updatedAt(q.getUpdatedAt())
                 .viewCount(s != null ? s.getViewCount() : 0L)
                 .likeCount(s != null ? s.getLikeCount() : 0L)
                 .answerCount(s != null ? s.getAnswerCount() : 0L)
