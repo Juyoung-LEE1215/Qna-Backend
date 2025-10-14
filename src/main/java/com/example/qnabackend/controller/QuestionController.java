@@ -6,7 +6,7 @@ import com.example.qnabackend.dto.QuestionUpdateRequest;
 import com.example.qnabackend.service.QuestionService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.*;
+import org.springframework.data.domain.Page;
 import org.springframework.http.*;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -33,8 +33,7 @@ public class QuestionController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String sort
     ) {
-        Pageable pageable = PageRequest.of(page, size, toSafeSort(sort));
-        return ResponseEntity.ok(questionService.list(category, pageable));
+        return ResponseEntity.ok(questionService.list(category, sort, page, size));
     }
 
     @GetMapping("/{id}")
@@ -64,21 +63,5 @@ public class QuestionController {
                                             @RequestParam String type) {
         questionService.updateStats(id, type);
         return ResponseEntity.ok().build();
-    }
-
-    // ---- 정렬 화이트리스트 ----
-    private Sort toSafeSort(String sort) {
-        String prop = "id";
-        Sort.Direction dir = Sort.Direction.DESC;
-
-        if (sort != null && !sort.isBlank()) {
-            switch (sort.toLowerCase()) {
-                case "latest" -> prop = "createdAt";
-                case "recommended" -> prop = "likeCount";
-                case "popular" -> prop = "viewCount";
-            }
-        }
-
-        return Sort.by(dir, prop);
     }
 }

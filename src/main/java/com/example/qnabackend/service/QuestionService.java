@@ -1,9 +1,7 @@
 package com.example.qnabackend.service;
 
 import com.example.qnabackend.dto.*;
-import com.example.qnabackend.entity.Question;
-import com.example.qnabackend.entity.QuestionStat;
-import com.example.qnabackend.entity.QuestionStatus;
+import com.example.qnabackend.entity.*;
 import com.example.qnabackend.repository.QuestionRepository;
 import com.example.qnabackend.repository.QuestionStatRepository;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +34,6 @@ public class QuestionService {
                 .answerCount(0L)
                 .popularityScore(0.0)
                 .build();
-
         questionStatRepository.save(stats);
         saved.assignStats(stats);
 
@@ -44,10 +41,27 @@ public class QuestionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<QuestionResponse> list(String category, Pageable pageable) {
-        Page<Question> result = (category == null || category.isBlank())
-                ? questionRepository.findByStatus(QuestionStatus.OPEN, pageable)
-                : questionRepository.findByStatusAndCategory(QuestionStatus.OPEN, category, pageable);
+    public Page<QuestionResponse> list(String category, String sort, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+
+        Page<Question> result;
+
+        if (sort == null || sort.isBlank() || sort.equalsIgnoreCase("latest")) {
+            result = (category == null || category.isBlank())
+                    ? questionRepository.findByStatus(QuestionStatus.OPEN, pageable)
+                    : questionRepository.findByStatusAndCategory(QuestionStatus.OPEN, category, pageable);
+        } else if (sort.equalsIgnoreCase("recommended")) {
+            result = (category == null || category.isBlank())
+                    ? questionRepository.findByStatusOrderByLikeCountDesc(QuestionStatus.OPEN, pageable)
+                    : questionRepository.findByStatusAndCategoryOrderByLikeCountDesc(QuestionStatus.OPEN, category, pageable);
+        } else if (sort.equalsIgnoreCase("popular")) {
+            result = (category == null || category.isBlank())
+                    ? questionRepository.findByStatusOrderByViewCountDesc(QuestionStatus.OPEN, pageable)
+                    : questionRepository.findByStatusAndCategoryOrderByViewCountDesc(QuestionStatus.OPEN, category, pageable);
+        } else {
+            throw new IllegalArgumentException("sort type not supported");
+        }
+
         return result.map(QuestionResponse::of);
     }
 
@@ -64,13 +78,11 @@ public class QuestionService {
         return QuestionResponse.of(question);
     }
 
-
     public void update(Long userId, Long id, QuestionUpdateRequest req) {
         Question q = questionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("question not found"));
-        if (!q.getUserId().equals(userId)) {
-            throw new IllegalStateException("only author can modify");
-        }
+        if (!q.getUserId().equals(userId)) throw new IllegalStateException("only author can modify");
+
         q.setTitle(req.title());
         q.setContent(req.content());
         q.setCategory(req.category());
@@ -79,14 +91,13 @@ public class QuestionService {
     public void delete(Long userId, Long id) {
         Question q = questionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("question not found"));
-        if (!q.getUserId().equals(userId)) {
-            throw new IllegalStateException("only author can delete");
-        }
+        if (!q.getUserId().equals(userId)) throw new IllegalStateException("only author can delete");
+
         q.setStatus(QuestionStatus.DELETED);
     }
 
     @Transactional
-    public void updateStats(Long id,String type){
+    public void updateStats(Long id, String type){
         Question question = questionRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("question not found"));
         QuestionStat stats = question.getStats();

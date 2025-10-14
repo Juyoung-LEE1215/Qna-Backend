@@ -21,6 +21,7 @@ public class AnswerService {
     private final AnswerVoteRepository answerVoteRepository;
     private final AnswerReportRepository answerReportRepository;
     private final QuestionRepository questionRepository;
+    private final QuestionService questionService;
 
     public Long create(Long userId, AnswerCreateRequest req) {
         questionRepository.findById(req.questionId())
@@ -38,6 +39,10 @@ public class AnswerService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
+
+        //answer increase
+        questionService.updateStats(req.questionId(), "answer");
+
         return answerRepository.save(a).getId();
     }
 
@@ -63,6 +68,12 @@ public class AnswerService {
         validateAuthor(userId, a);
         a.setStatus(AnswerStatus.DELETED);
         a.setUpdatedAt(LocalDateTime.now());
+
+        //delete
+        Question question = questionRepository.findById(a.getQuestionId())
+                .orElseThrow(() -> new IllegalArgumentException("question not found"));
+        QuestionStat stats = question.getStats();
+        if (stats.getAnswerCount() > 0) stats.decreaseAnswerCount();
     }
 
     public void vote(Long userId, Long answerId, String typeRaw) {
@@ -95,14 +106,19 @@ public class AnswerService {
 
         normalizeCounts(a);
         a.setUpdatedAt(LocalDateTime.now());
+
+        //update
+        Question question = questionRepository.findById(a.getQuestionId())
+                .orElseThrow(() -> new IllegalArgumentException("question not found"));
+        question.getStats().recalculatePopularityScore();
     }
 
-    public void report(Long userId, Long answerId, String reason) {
+    public boolean report(Long userId, Long answerId, String reason) {
         Answer a = answerRepository.findById(answerId)
                 .orElseThrow(() -> new IllegalArgumentException("answer not found"));
 
         if (answerReportRepository.existsByAnswerIdAndReporterId(answerId, userId)) {
-            return; // 중복 신고 무시
+            return false; //중복신고 시 false 리턴
         }
 
         AnswerReport report = AnswerReport.builder()
@@ -118,6 +134,7 @@ public class AnswerService {
             a.setStatus(AnswerStatus.BLINDED);
         }
         a.setUpdatedAt(LocalDateTime.now());
+        return true;
     }
 
     // helpers
