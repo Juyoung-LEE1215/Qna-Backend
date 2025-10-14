@@ -24,7 +24,7 @@ public class AnswerService {
     private final QuestionService questionService;
 
     public Long create(Long userId, AnswerCreateRequest req) {
-        questionRepository.findById(req.questionId())
+        Question question = questionRepository.findById(req.questionId())
                 .orElseThrow(() -> new IllegalArgumentException("question not found"));
 
         Answer a = Answer.builder()
@@ -40,10 +40,12 @@ public class AnswerService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
+        Answer savedAnswer = answerRepository.save(a);
+
         //answer increase
         questionService.updateStats(req.questionId(), "answer");
 
-        return answerRepository.save(a).getId();
+        return savedAnswer.getId();
     }
 
     @Transactional(readOnly = true)
@@ -70,11 +72,11 @@ public class AnswerService {
         a.setUpdatedAt(LocalDateTime.now());
 
         //delete
-        Question question = questionRepository.findById(a.getQuestionId())
-                .orElseThrow(() -> new IllegalArgumentException("question not found"));
-        QuestionStat stats = question.getStats();
-        if (stats.getAnswerCount() > 0) stats.decreaseAnswerCount();
+        questionService.updateStats(a.getQuestionId(), "answer");
     }
+
+
+
 
     public void vote(Long userId, Long answerId, String typeRaw) {
         VoteType type = toVoteType(typeRaw);
@@ -108,9 +110,7 @@ public class AnswerService {
         a.setUpdatedAt(LocalDateTime.now());
 
         //update
-        Question question = questionRepository.findById(a.getQuestionId())
-                .orElseThrow(() -> new IllegalArgumentException("question not found"));
-        question.getStats().recalculatePopularityScore();
+        questionService.updateStats(a.getQuestionId(), "like");
     }
 
     public boolean report(Long userId, Long answerId, String reason) {
